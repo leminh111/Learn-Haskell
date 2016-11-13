@@ -4,21 +4,9 @@ module LogAnalysis where
 
 import Log
 
+-- Most of the answers is improved by using solutions from
+-- https://gist.github.com/damncabbage/1a9817a348e8a4e522c0
 -- Ex 1
---
--- | @extractWord n s@ extractWord the @n@th word in the string @s@
-extractWord :: Int -> String -> String
-extractWord x y
-  | x > 0 = unwords (take 1 (drop (x-1) (words y)))
-  | otherwise = ""
-
--- | @extractWords n s@ extractWords the @n@th words to the end
--- in the string @s@
-extractWords :: Int -> String -> String
-extractWords x y
-  | x > 0 = unwords (drop (x-1) (words y))
-  | otherwise = ""
-
 -- | @parseMessage x@ parseMessage the string @x@ to return
 -- the LogMessage, eg:
 --
@@ -28,24 +16,16 @@ extractWords x y
 -- parseMessage "This is not in the right format"
 --   == Unknown "This is not in the right format"
 parseMessage :: String -> LogMessage
-parseMessage x@('E':_) = LogMessage
-                           (Error (read (extractWord 2 x)))
-                           (read (extractWord 3 x))
-                           (extractWords 4 x)
-parseMessage x@('I':_) = LogMessage
-                           (Info)
-                           (read (extractWord 2 x))
-                           (extractWords 3 x)
-parseMessage x@('W':_) = LogMessage
-                           (Warning)
-                           (read (extractWord 2 x))
-                           (extractWords 3 x)
-parseMessage x = Unknown x
+parseMessage msg = case (words msg) of
+  ("I":time:string)      -> LogMessage Info    (read time) (unwords string)
+  ("W":time:string)      -> LogMessage Warning (read time) (unwords string)
+  ("E":code:time:string) -> LogMessage (Error (read code)) (read time) (unwords string)
+  _                      -> Unknown msg
 
 -- | @parse x@ parse the whole string @x@ in a file to return
 -- a list of LogMessage, eg:
 parse :: String -> [LogMessage]
-parse x = map parseMessage (lines x)
+parse = map parseMessage . lines
 
 -- Ex 2
 --
@@ -54,19 +34,19 @@ parse x = map parseMessage (lines x)
 insert :: LogMessage -> MessageTree -> MessageTree
 insert (Unknown _) t = t
 insert lm Leaf = Node Leaf lm Leaf
-insert lm@(LogMessage _ x _) (Node s rlm@(LogMessage _ m _) l)
-  | (x >= m) && (l == Leaf) = Node s rlm (Node Leaf lm Leaf)
-  | (x < m) && (s == Leaf) = Node (Node Leaf lm Leaf) rlm l
-  | (x >= m) && (l /= Leaf) = Node s rlm (insert lm l)
-  | (x < m) && (s /= Leaf) = Node (insert lm s) rlm l
+insert msg (Node left node right)
+  | (ts msg <= ts node) = Node (insert msg left) node right
+  | otherwise           = Node left node (insert msg right)
+  where
+    ts (LogMessage _ t _) = t
+    ts _                  = 0
 
 -- Ex 3
 --
 -- | @build x@ build a MessageTree based on @x@ list of LogMessage
 -- and return a new sorted binary tree
 build :: [LogMessage] -> MessageTree
-build [] = Leaf
-build (x:xs) = insert x (build xs)
+build = foldr insert Leaf
 
 -- Ex 4
 --
@@ -74,7 +54,7 @@ build (x:xs) = insert x (build xs)
 -- based on @t@ MessageTree
 inOrder :: MessageTree -> [LogMessage]
 inOrder Leaf = []
-inOrder t@(Node s lm l) = inOrder s ++ [lm] ++ inOrder l
+inOrder (Node s lm l) = inOrder s ++ [lm] ++ inOrder l
 
 -- Ex 5
 --
@@ -89,6 +69,15 @@ whatWentWrongEach :: LogMessage -> String
 whatWentWrongEach (LogMessage (Error s) _ x)
   | s >= 50 = x
   | otherwise = ""
-whatWentWrongEach (LogMessage _ _ _) = ""
-whatWentWrongEach (Unknown _) = ""
+whatWentWrongEach _ = ""
 
+{- Other Solutions:
+ - From https://gist.github.com/damncabbage/1a9817a348e8a4e522c0
+ - whatWentWrong :: [LogMessage] -> [String]
+whatWentWrong xs = (map message (filter important (inOrder (build xs))))
+  where
+    important (LogMessage (Error sev) _ _) = (sev >= 50)
+    important _ = False
+    message (LogMessage _ _ m) = m
+    message (Unknown _) = ""
+-}
